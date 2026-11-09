@@ -23,11 +23,16 @@ PALETTES = {
     "rhea": dict(gi=(214, 90, 44), belt=(250, 214, 70), skin=(200, 140, 100),
                  hair=(96, 52, 120), accent=(250, 214, 70), wrap=(70, 70, 84),
                  hair_style="ponytail", sleeves=False),
+    # masked enemy fighter used in Adventure mode
+    "shade": dict(gi=(74, 64, 104), belt=(220, 220, 230), skin=(222, 180, 140),
+                  hair=(30, 28, 40), accent=(235, 235, 245), wrap=(40, 40, 48),
+                  hair_style="spiky", sleeves=True, mask=True),
 }
 
 PROJECTILE_COLORS = {
     "kai": ((235, 250, 255), (120, 200, 255), (40, 110, 230)),
     "rhea": ((255, 250, 220), (255, 190, 70), (230, 90, 30)),
+    "shade": ((250, 230, 255), (200, 120, 255), (110, 40, 180)),
 }
 
 
@@ -145,6 +150,8 @@ def _head(surf, p, pal):
         pygame.draw.line(surf, pal["accent"], (hx - 5, hy - 3), (hx + 5, hy - 3), 2)
         pygame.draw.line(surf, pal["accent"], (hx - 5, hy - 2), (hx - 10, hy + 1), 2)
         pygame.draw.line(surf, pal["accent"], (hx - 5, hy - 2), (hx - 9, hy + 4), 1)
+    if pal.get("mask"):
+        pygame.draw.rect(surf, _dark(pal["gi"], 0.6), (hx - 2, hy + 1, 7, 4))
     surf.set_at((hx + 3, hy), OUTLINE)  # eye
 
 
@@ -265,10 +272,179 @@ def make_stage():
     return s
 
 
-def generate_all(assets_dir):
+# ------------------------------------------------------- adventure art ----
+T = 16  # tile size in the tileset (drawn x2 in game)
+
+# Tileset layout (8 columns x 2 rows of 16x16 tiles), see README.
+TILE_INDEX = dict(grass=0, dirt=1, stone=2, plank=3, crate=4, spikes=5, gem0=6, gem1=7,
+                  heart=8, lantern_off=9, lantern_on=10, heart_empty=11)
+
+
+def _tile_rect(i):
+    return pygame.Rect((i % 8) * T, (i // 8) * T, T, T)
+
+
+def make_tiles():
+    s = pygame.Surface((8 * T, 2 * T), pygame.SRCALPHA)
+    dirt, dirt_d, dirt_l = (138, 86, 52), (104, 62, 38), (160, 106, 66)
+
+    def dirt_fill(r):
+        s.fill(dirt, r)
+        for (x, y) in ((2, 3), (9, 2), (12, 9), (4, 11), (7, 7), (13, 14), (1, 14), (10, 12)):
+            s.set_at((r.x + x, r.y + y), dirt_d)
+        for (x, y) in ((5, 5), (11, 6), (3, 9), (14, 3)):
+            s.set_at((r.x + x, r.y + y), dirt_l)
+
+    r = _tile_rect(0)                                   # grass top
+    dirt_fill(r)
+    s.fill((84, 170, 70), (r.x, r.y, T, 5))
+    s.fill((126, 206, 92), (r.x, r.y, T, 2))
+    for x in range(0, T, 3):
+        s.fill((84, 170, 70), (r.x + x, r.y + 5, 1, 1 + (x * 7) % 3))
+    dirt_fill(_tile_rect(1))                            # dirt
+
+    r = _tile_rect(2)                                   # stone block
+    s.fill((128, 124, 140), r)
+    s.fill((160, 156, 172), (r.x, r.y, T, 1))
+    s.fill((160, 156, 172), (r.x, r.y, 1, T))
+    s.fill((84, 80, 96), (r.x, r.y + T - 1, T, 1))
+    s.fill((84, 80, 96), (r.x + T - 1, r.y, 1, T))
+    s.fill((96, 92, 108), (r.x, r.y + 7, T, 1))
+    s.fill((96, 92, 108), (r.x + 8, r.y, 1, 7))
+    s.fill((96, 92, 108), (r.x + 4, r.y + 8, 1, 8))
+
+    r = _tile_rect(3)                                   # one-way wooden plank
+    s.fill((176, 116, 62), (r.x, r.y, T, 6))
+    s.fill((214, 152, 88), (r.x, r.y, T, 1))
+    s.fill((120, 74, 40), (r.x, r.y + 5, T, 1))
+    s.fill((120, 74, 40), (r.x + 7, r.y + 1, 1, 4))
+    s.set_at((r.x + 2, r.y + 3), (90, 60, 40))
+    s.set_at((r.x + 12, r.y + 3), (90, 60, 40))
+
+    r = _tile_rect(4)                                   # crate
+    s.fill((196, 136, 70), r)
+    pygame.draw.rect(s, (110, 66, 34), r, 2)
+    pygame.draw.line(s, (130, 82, 42), (r.x + 2, r.y + 2), (r.right - 3, r.bottom - 3), 2)
+    pygame.draw.line(s, (130, 82, 42), (r.right - 3, r.y + 2), (r.x + 2, r.bottom - 3), 2)
+    s.fill((226, 170, 100), (r.x + 2, r.y + 2, T - 4, 1))
+
+    r = _tile_rect(5)                                   # spikes
+    for i in range(4):
+        x = r.x + i * 4
+        pygame.draw.polygon(s, (210, 214, 226), [(x, r.bottom - 1), (x + 2, r.y + 7), (x + 3, r.bottom - 1)])
+        pygame.draw.line(s, (120, 124, 140), (x + 2, r.y + 8), (x + 3, r.bottom - 1))
+    s.fill((90, 92, 104), (r.x, r.bottom - 2, T, 2))
+
+    for i, shine in ((6, False), (7, True)):            # gem (2 frames)
+        r = _tile_rect(i)
+        pts = [(r.x + 8, r.y + 2), (r.x + 13, r.y + 7), (r.x + 8, r.y + 14), (r.x + 3, r.y + 7)]
+        pygame.draw.polygon(s, OUTLINE, pts, 0)
+        inner = [(r.x + 8, r.y + 3), (r.x + 12, r.y + 7), (r.x + 8, r.y + 13), (r.x + 4, r.y + 7)]
+        pygame.draw.polygon(s, (60, 210, 230), inner)
+        pygame.draw.polygon(s, (170, 245, 255), [(r.x + 8, r.y + 3), (r.x + 10, r.y + 7), (r.x + 6, r.y + 7)])
+        if shine:
+            s.set_at((r.x + 6, r.y + 5), (255, 255, 255))
+            s.set_at((r.x + 7, r.y + 4), (255, 255, 255))
+
+    for i, col in ((8, (232, 50, 70)), (11, (70, 50, 70))):   # heart full / empty
+        r = _tile_rect(i)
+        pygame.draw.circle(s, OUTLINE, (r.x + 5, r.y + 6), 4)
+        pygame.draw.circle(s, OUTLINE, (r.x + 10, r.y + 6), 4)
+        pygame.draw.polygon(s, OUTLINE, [(r.x + 1, r.y + 7), (r.x + 14, r.y + 7), (r.x + 8, r.y + 14)])
+        pygame.draw.circle(s, col, (r.x + 5, r.y + 6), 3)
+        pygame.draw.circle(s, col, (r.x + 10, r.y + 6), 3)
+        pygame.draw.polygon(s, col, [(r.x + 2, r.y + 7), (r.x + 13, r.y + 7), (r.x + 8, r.y + 13)])
+        s.set_at((r.x + 4, r.y + 5), (255, 220, 220))
+
+    for i, lit in ((9, False), (10, True)):              # checkpoint lantern
+        r = _tile_rect(i)
+        body = (236, 70, 56) if lit else (110, 90, 100)
+        glow = (255, 210, 120) if lit else (150, 130, 140)
+        s.fill((50, 34, 30), (r.x + 7, r.y, 2, 3))
+        pygame.draw.ellipse(s, OUTLINE, (r.x + 2, r.y + 2, 12, 14))
+        pygame.draw.ellipse(s, body, (r.x + 3, r.y + 3, 10, 12))
+        pygame.draw.ellipse(s, glow, (r.x + 6, r.y + 6, 4, 6))
+        s.fill(OUTLINE, (r.x + 4, r.y + 8, 8, 1))
+    return s
+
+
+def make_grunt():
+    """Small horned blob enemy: walk 1, walk 2, squashed (16x16 each)."""
+    s = pygame.Surface((48, 16), pygame.SRCALPHA)
+    body, dark = (110, 186, 84), (70, 130, 56)
+    for i in range(3):
+        f = pygame.Surface((16, 16), pygame.SRCALPHA)
+        if i < 2:
+            pygame.draw.polygon(f, (240, 230, 200), [(4, 5), (3, 1), (6, 4)])
+            pygame.draw.polygon(f, (240, 230, 200), [(11, 4), (13, 1), (12, 5)])
+            pygame.draw.ellipse(f, body, (1, 3, 14, 11))
+            pygame.draw.ellipse(f, dark, (2, 9, 12, 5))
+            f.fill(OUTLINE, (3 + 2 * i, 13, 3, 3))
+            f.fill(OUTLINE, (10 - 2 * i, 13, 3, 3))
+            f.fill((255, 255, 255), (4, 6, 3, 3))
+            f.fill((255, 255, 255), (9, 6, 3, 3))
+            f.set_at((4, 7), OUTLINE)
+            f.set_at((9, 7), OUTLINE)
+            f.fill(OUTLINE, (6, 11, 4, 1))
+        else:
+            pygame.draw.ellipse(f, body, (0, 10, 16, 6))
+            f.fill(OUTLINE, (4, 12, 2, 1))
+            f.fill(OUTLINE, (10, 12, 2, 1))
+        out = _outlined(lambda t, src=f: t.blit(src, (0, 0)), (16, 16))
+        s.blit(out, (i * 16, 0))
+    return s
+
+
+def make_goal():
+    """Shrine gate the hero walks through to finish a level (48x64)."""
+    def draw(f):
+        red, red_d, black = (214, 52, 44), (150, 30, 30), (34, 28, 34)
+        f.fill(red, (9, 12, 5, 52))
+        f.fill(red, (34, 12, 5, 52))
+        f.fill(red_d, (12, 12, 2, 52))
+        f.fill(red_d, (37, 12, 2, 52))
+        f.fill(black, (8, 58, 7, 6))
+        f.fill(black, (33, 58, 7, 6))
+        pygame.draw.polygon(f, black, [(0, 4), (48, 4), (46, 9), (2, 9)])
+        f.fill(red, (2, 9, 44, 4))
+        f.fill(red, (6, 20, 36, 4))
+        f.fill((250, 220, 120), (20, 13, 8, 7))
+        f.fill(black, (22, 15, 4, 3))
+    return _outlined(draw, (48, 64))
+
+
+def make_adventure_bg():
+    """Seamlessly tiling sky + hills (320x180), scrolled with parallax."""
+    w, h = 320, 180
+    s = pygame.Surface((w, h))
+    top, bottom = (92, 150, 230), (250, 206, 160)
+    for y in range(h):
+        t = min(1, y / 140)
+        s.fill(tuple(int(a + (b - a) * t) for a, b in zip(top, bottom)), (0, y, w, 1))
+    for cx, cy, r in ((40, 30, 10), (54, 26, 13), (70, 31, 9), (200, 50, 9), (214, 46, 12), (228, 51, 8)):
+        pygame.draw.circle(s, (250, 250, 255), (cx, cy), r)
+    tau = 2 * math.pi
+    for x in range(w):
+        far = 96 + 14 * math.sin(tau * x / w * 2) + 8 * math.sin(tau * x / w * 5 + 1)
+        near = 128 + 10 * math.sin(tau * x / w * 3 + 2) + 5 * math.sin(tau * x / w * 7)
+        s.fill((150, 140, 196), (x, int(far), 1, h))
+        s.fill((96, 150, 110), (x, int(near), 1, h))
+        if (x * 37) % 23 == 0:   # little trees on the near hills
+            pygame.draw.circle(s, (70, 120, 84), (x, int(near) + 2), 4)
+    return s
+
+
+def generate_all(assets_dir, only_missing=False):
+    """Write all art. With only_missing=True, existing files (your edits) are kept."""
     os.makedirs(assets_dir, exist_ok=True)
+    jobs = {}
     for key, pal in PALETTES.items():
-        pygame.image.save(make_fighter_sheet(pal), os.path.join(assets_dir, f"{key}.png"))
-        pygame.image.save(make_projectile_sheet(PROJECTILE_COLORS[key]),
-                          os.path.join(assets_dir, f"{key}_blast.png"))
-    pygame.image.save(make_stage(), os.path.join(assets_dir, "stage.png"))
+        jobs[f"{key}.png"] = lambda pal=pal: make_fighter_sheet(pal)
+        jobs[f"{key}_blast.png"] = lambda key=key: make_projectile_sheet(PROJECTILE_COLORS[key])
+    jobs.update({"stage.png": make_stage, "tiles.png": make_tiles, "grunt.png": make_grunt,
+                 "goal.png": make_goal, "adventure_bg.png": make_adventure_bg})
+    for name, make in jobs.items():
+        path = os.path.join(assets_dir, name)
+        if only_missing and os.path.exists(path):
+            continue
+        pygame.image.save(make(), path)

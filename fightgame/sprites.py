@@ -13,22 +13,21 @@ def asset(name):
     return os.path.join(ASSETS, name)
 
 
-def ensure_assets(keys):
-    needed = ["stage.png"] + [f"{k}.png" for k in keys] + [f"{k}_blast.png" for k in keys]
-    if not all(os.path.exists(asset(n)) for n in needed):
-        from .spritegen import generate_all
-        generate_all(ASSETS)
+def ensure_assets():
+    """Create any missing art files. Files that already exist are never touched."""
+    from .spritegen import generate_all
+    generate_all(ASSETS, only_missing=True)
 
 
 class FighterSprites:
-    def __init__(self, path):
+    def __init__(self, path, scale=SCALE):
         sheet = pygame.image.load(path).convert_alpha()
         self.frames = {}
         for row, (name, count) in enumerate(ANIMS):
             frames = []
             for col in range(count):
                 sub = sheet.subsurface((col * FRAME_W, row * FRAME_H, FRAME_W, FRAME_H))
-                big = pygame.transform.scale(sub, (FRAME_W * SCALE, FRAME_H * SCALE))
+                big = pygame.transform.scale(sub, (FRAME_W * scale, FRAME_H * scale))
                 frames.append((big, pygame.transform.flip(big, True, False)))
             self.frames[name] = frames
 
@@ -38,10 +37,10 @@ class FighterSprites:
         return pair[0] if facing == 1 else pair[1]
 
 
-def load_blast(path):
+def load_blast(path, scale=SCALE):
     sheet = pygame.image.load(path).convert_alpha()
     w, h = sheet.get_height() * 3 // 2, sheet.get_height()
-    return [pygame.transform.scale(sheet.subsurface((i * w, 0, w, h)), (w * SCALE, h * SCALE))
+    return [pygame.transform.scale(sheet.subsurface((i * w, 0, w, h)), (w * scale, h * scale))
             for i in range(sheet.get_width() // w)]
 
 

@@ -1,9 +1,11 @@
 # Pixel Brawl
 
-A small, original 2D fighting game prototype made with **Python + Pygame**.
-You play 1 vs CPU against one of two fighters, best of 3 rounds.
+A small, original 2D action game made with **Python + Pygame**, with two modes:
 
-![sprite sheet](assets/kai.png)
+- **Adventure**: a side-scrolling platformer. Run and jump through 3 levels while
+  stomping enemies, breaking crates, collecting gems, dodging spikes and pits, and
+  fighting masked martial artists. Your rival waits at the end of level 3.
+- **Versus CPU**: a one-on-one fighting game, best of 3 rounds.
 
 ## Run it
 
@@ -14,50 +16,73 @@ pip install -r requirements.txt
 python main.py
 ```
 
-Watch the CPU fight itself: `python main.py --demo`
+On macOS, use `python3` and `python3 -m pip install --user pygame`.
+
+Watch the CPU fight itself in versus mode: `python main.py --demo`
 
 ## Controls
 
 | Action | Keys |
 |---|---|
-| Move / jump / crouch | Arrow keys or WASD |
-| Block | Hold **back** (away from opponent). Hold **down-back** to block sweeps |
-| Light punch | J or Z |
-| Heavy punch | K or X |
-| Kick | L or C |
-| Sweep (hits low, knocks down) | Down + Kick |
-| Jump kick (must be blocked standing) | Kick while in the air |
-| **Energy blast** | ↓ ↘ → + Punch (quarter circle forward) |
-| Pause | Enter / P |
-| Show hitboxes | F1 |
-| Fullscreen | F11 |
-| Back / quit | Esc |
+| Move | ← → or A / D |
+| Jump (hold for higher) | ↑, W or **Space** |
+| Crouch | ↓ or S |
+| Light punch / Heavy punch / Kick | **J / K / L** (or Z / X / C) |
+| Sweep (hits low) | ↓ + Kick |
+| Jump kick | Kick (or punch) in the air |
+| **Energy blast** | ↓ ↘ → + Punch (or ↓ ↙ ← + Punch to fire left) |
+| Pause / Fullscreen / Back | Enter / F11 / Esc |
 
-**Combo tip:** a light or heavy punch that connects can be cancelled into the
-blast: tap punch, then immediately roll ↓ ↘ → + punch.
+### Adventure tips
 
-On the character-select screen, use Up/Down to set the CPU difficulty (Easy / Normal / Hard).
+- **Stomp** small horned blobs by landing on them, or punch them.
+- **Block** a fighter's attacks by **crouching while facing them**.
+- **Crates**: jump into them from below, kick them, or sweep the low ones. Each one holds a gem.
+- **Down + Jump** drops you through a wooden plank.
+- Every **50 gems** gives you an extra life. Hearts restore health.
+- Light lanterns (**checkpoints**) so you respawn there if you lose a life.
+- The gate at the end of level 3 stays sealed until you beat your rival.
 
-## Fighters
+### Versus tips
 
-- **Kai**: quick and balanced, fast blasts.
-- **Rhea**: slower, but does 15% more damage.
+Hold **back** to block (down-back against sweeps). A punch that connects can be
+cancelled into the blast.
+
+## Making your own levels
+
+Levels are plain text in `levels/`, edited in any text editor. One character
+is one 32×32 tile, and the ground's top row is row 15 of 17.
+
+```
+.  empty            #  ground            S  stone block
+=  wooden plank (jump up through it)     X  crate (holds a gem)
+^  spikes           o  gem               H  heart
+g  blob enemy       f  masked fighter    K  boss (your rival)
+C  checkpoint       P  player start      E  goal gate (its bottom-left tile)
+```
+
+Put enemies, pickups, `P`, `C` and `E` on the row just above a surface. The hero
+is about 3¼ tiles tall and jumps about 5 tiles high, so leave at least 4 empty rows
+under solid blocks they should walk beneath. To add a level, add its file name
+to `LEVEL_FILES` in `fightgame/adventure/scene.py`.
 
 ## Editing the art in LibreSprite
 
-All the art is plain PNG in `assets/`, so open these files in LibreSprite and
-paint over them:
+All art is plain PNG in `assets/`. The game only creates files that are
+**missing**, so your edits are never overwritten when it starts.
 
 | File | Contents |
 |---|---|
-| `kai.png`, `rhea.png` | Fighter sprite sheets |
-| `kai_blast.png`, `rhea_blast.png` | Projectile, 2 frames of 24×16 |
-| `stage.png` | Background, 320×180 (scaled ×3 in game) |
+| `kai.png`, `rhea.png`, `shade.png` | Fighter sheets: hero / rival, and the masked enemy |
+| `*_blast.png` | Energy blast, 2 frames of 24×16 |
+| `tiles.png` | 16×16 tiles in an 8×2 grid: grass, dirt, stone, plank, crate, spikes, gem×2 / heart, lantern off, lantern on, empty heart |
+| `grunt.png` | Blob enemy, 3 frames of 16×16 (walk, walk, squashed) |
+| `goal.png` | Goal gate, 48×64 |
+| `adventure_bg.png` | Adventure background, 320×180. It scrolls, so keep the left and right edges matching |
+| `stage.png` | Versus background, 320×180 |
 
-Fighter sheets are a grid of **48×64 pixel frames**. Each row is one animation,
-each column one frame. Draw characters **facing right**; the game flips them.
-Keep the feet on the bottom row of each frame (y = 62) and the body centred
-around x = 21.
+Fighter sheets are a grid of **48×64 frames**. Each row is one animation, each
+column one frame, and fighters are drawn **facing right** with feet on y = 62:
 
 | Row | Animation | Frames |
 |---|---|---|
@@ -76,32 +101,35 @@ around x = 21.
 | 12 | knockdown (falling, lying) | 2 |
 | 13 | win | 2 |
 
-LibreSprite tip: set *View → Grid → Grid Settings* to 48×64 to see the frames.
-
-`python tools/generate_sprites.py` regenerates the placeholder art. **This
-overwrites your edits.**
+In LibreSprite, set *View → Grid → Grid Settings* to 48×64 (or 16×16 for tiles).
+`python tools/generate_sprites.py` regenerates **all** placeholder art and
+**overwrites** your edits.
 
 ## Project layout
 
 ```
-main.py                 entry point
+main.py                     entry point
+levels/level1-3.txt         Adventure levels (plain text)
 fightgame/
-  game.py               app loop, title / select / fight scenes, HUD
-  fighter.py            fighter state machine, physics, hit & hurt boxes, projectiles
-  moves.py              frame data (startup / active / recovery, damage, stun)
-  ai.py                 CPU opponent
-  characters.py         fighter stats
-  anims.py              sprite sheet layout
-  sprites.py            asset loading
-  spritegen.py          placeholder art generator
-tools/generate_sprites.py
-tests/smoke_test.py     headless CPU-vs-CPU test
+  game.py                   app loop, title & select screens, Versus fight scene
+  fighter.py                Versus fighter: states, physics, hit/hurt boxes
+  moves.py                  frame data shared by both modes
+  characters.py             fighter stats
+  ai.py                     Versus CPU opponent
+  adventure/
+    scene.py                Adventure mode: level flow, camera, interactions, HUD
+    actors.py               hero, blob enemy, enemy fighter / boss, blasts, pickups
+    level.py                level file loader and tile collision
+  anims.py, sprites.py      sprite sheet layout and loading
+  spritegen.py              placeholder art generator
+tests/
+  smoke_test.py             Versus mode, CPU vs CPU
+  adventure_test.py         Adventure mechanics, plus a bot that clears every level
 ```
-
-To tune the game feel, start with `moves.py` (frame data) and `characters.py` (speeds and damage).
 
 ## Test
 
 ```bash
+python tests/adventure_test.py
 python tests/smoke_test.py
 ```

@@ -18,7 +18,7 @@ DIM = (150, 150, 170)
 MOVE_KEYS = {
     "left": (pygame.K_LEFT, pygame.K_a),
     "right": (pygame.K_RIGHT, pygame.K_d),
-    "up": (pygame.K_UP, pygame.K_w),
+    "up": (pygame.K_UP, pygame.K_w, pygame.K_SPACE),
     "down": (pygame.K_DOWN, pygame.K_s),
 }
 ATTACK_KEYS = {
@@ -78,17 +78,25 @@ def text(screen, font, msg, pos, color=WHITE, center=True, shadow=True):
 
 
 class TitleScene(Scene):
+    MODES = [("ADVENTURE", "Run, jump and fight through 3 levels"),
+             ("VERSUS CPU", "One-on-one fight, best of 3 rounds")]
+
     def __init__(self, app):
         super().__init__(app)
         self.t = 0
+        self.choice = 0
 
     def handle(self, events):
         for e in events:
-            if e.type == pygame.KEYDOWN:
-                if e.key == pygame.K_ESCAPE:
-                    self.app.running = False
-                elif e.key in CONFIRM:
-                    self.app.scene = SelectScene(self.app)
+            if e.type != pygame.KEYDOWN:
+                continue
+            if e.key == pygame.K_ESCAPE:
+                self.app.running = False
+            elif e.key in (pygame.K_UP, pygame.K_w, pygame.K_DOWN, pygame.K_s):
+                self.choice = 1 - self.choice
+            elif e.key in CONFIRM:
+                mode = "adventure" if self.choice == 0 else "versus"
+                self.app.scene = SelectScene(self.app, mode)
 
     def update(self):
         self.t += 1
@@ -97,23 +105,25 @@ class TitleScene(Scene):
         a = self.app
         screen.blit(a.stage, (0, 0))
         shade = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
-        shade.fill((10, 6, 24, 140))
+        shade.fill((10, 6, 24, 150))
         screen.blit(shade, (0, 0))
-        text(screen, a.font_huge, "PIXEL BRAWL", (WIDTH // 2, 150), GOLD)
-        text(screen, a.font_small, "a tiny 2D fighting game", (WIDTH // 2, 215), DIM)
-        if (self.t // 30) % 2 == 0:
-            text(screen, a.font_big, "PRESS ENTER", (WIDTH // 2, 300))
-        lines = ["Move: Arrow keys / WASD     Jump: Up     Block: hold Back",
-                 "Light punch: J / Z     Heavy punch: K / X     Kick: L / C",
-                 "Sweep: Down + Kick     Blast: Down, Down-Forward, Forward + Punch",
-                 "Enter: pause     F1: show hitboxes     F11: fullscreen     Esc: back"]
-        for i, ln in enumerate(lines):
-            text(screen, a.font_small, ln, (WIDTH // 2, 380 + i * 30), WHITE)
+        text(screen, a.font_huge, "PIXEL BRAWL", (WIDTH // 2, 120), GOLD)
+        for i, (name, desc) in enumerate(self.MODES):
+            sel = i == self.choice
+            y = 230 + i * 80
+            text(screen, a.font_big, ("> " if sel else "") + name + (" <" if sel else ""),
+                 (WIDTH // 2, y), GOLD if sel else WHITE)
+            text(screen, a.font_small, desc, (WIDTH // 2, y + 34), DIM)
+        text(screen, a.font_small, "Up/Down to choose, Enter to start", (WIDTH // 2, 420), WHITE)
+        text(screen, a.font_small, "Arrows/WASD move   Up/W/Space jump   J K L attack   Enter pause",
+             (WIDTH // 2, 460), DIM)
+        text(screen, a.font_small, "F11 fullscreen   Esc quit", (WIDTH // 2, 490), DIM)
 
 
 class SelectScene(Scene):
-    def __init__(self, app):
+    def __init__(self, app, mode="versus"):
         super().__init__(app)
+        self.mode = mode
         self.choice = 0
         self.levels = list(LEVELS)
         self.level = self.levels.index(app.level)
@@ -131,6 +141,9 @@ class SelectScene(Scene):
                 self.level = (self.level - 1) % len(self.levels)
             elif e.key in (pygame.K_DOWN, pygame.K_s):
                 self.level = (self.level + 1) % len(self.levels)
+            elif e.key in CONFIRM and self.mode == "adventure":
+                from .adventure.scene import AdventureScene
+                self.app.scene = AdventureScene(self.app, CHARACTERS[self.choice])
             elif e.key in CONFIRM:
                 self.app.level = self.levels[self.level]
                 p1 = CHARACTERS[self.choice]
@@ -159,8 +172,9 @@ class SelectScene(Scene):
             screen.blit(img, img.get_rect(midbottom=(cx, box.bottom - 10)))
             text(screen, a.font_big, ch.name, (cx, box.bottom + 30), GOLD if sel else WHITE)
             text(screen, a.font_small, ch.blurb, (cx, box.bottom + 62), DIM)
-        text(screen, a.font_med, f"CPU:  < {self.levels[self.level]} >   (Up/Down)",
-             (WIDTH // 2, 490))
+        if self.mode == "versus":
+            text(screen, a.font_med, f"CPU:  < {self.levels[self.level]} >   (Up/Down)",
+                 (WIDTH // 2, 490))
         text(screen, a.font_small, "Left/Right to choose, Enter to fight", (WIDTH // 2, 522), DIM)
 
 
@@ -225,7 +239,7 @@ class FightScene(Scene):
             if e.key == pygame.K_F1:
                 self.show_boxes = not self.show_boxes
             elif e.key == pygame.K_ESCAPE:
-                self.app.scene = SelectScene(self.app)
+                self.app.scene = SelectScene(self.app, "versus")
             elif self.phase == "match_over" and e.key in (pygame.K_RETURN, pygame.K_SPACE):
                 self.app.scene = FightScene(self.app, self.f1.char, self.f2.char, self.app.level)
             elif e.key in (pygame.K_RETURN, pygame.K_p) and self.phase == "fight":
@@ -462,9 +476,12 @@ class App:
         self.screen = pygame.display.set_mode((WIDTH, HEIGHT), pygame.SCALED | pygame.RESIZABLE)
         self.clock = pygame.time.Clock()
         keys = [c.key for c in CHARACTERS]
-        ensure_assets(keys)
+        ensure_assets()
         self.sprites = {k: FighterSprites(asset(f"{k}.png")) for k in keys}
         self.blasts = {k: load_blast(asset(f"{k}_blast.png")) for k in keys}
+        # smaller copies for Adventure mode (plus the masked enemy, "shade")
+        self.small_sprites = {k: FighterSprites(asset(f"{k}.png"), scale=2) for k in keys + ["shade"]}
+        self.small_blasts = {k: load_blast(asset(f"{k}_blast.png"), scale=2) for k in keys + ["shade"]}
         self.stage = load_stage((WIDTH, HEIGHT))
         self.font_huge = pygame.font.Font(None, 96)
         self.font_big = pygame.font.Font(None, 56)
