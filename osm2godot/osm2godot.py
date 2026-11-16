@@ -248,6 +248,50 @@ def point_in_ring(pt, ring):
     return inside
 
 
+def clip_polyline(pts, r):
+    """Clip a polyline to the square [-r, r] x [-r, r].
+    Returns a list of (points, start_cut, end_cut) pieces; *_cut is True where the
+    piece was cut by the square's edge rather than ending at an original point."""
+    def inside(p):
+        return -r <= p[0] <= r and -r <= p[1] <= r
+
+    def clip_seg(a, b):            # Liang-Barsky
+        t0, t1 = 0.0, 1.0
+        dx, dy = b[0] - a[0], b[1] - a[1]
+        for p, q in ((-dx, a[0] + r), (dx, r - a[0]), (-dy, a[1] + r), (dy, r - a[1])):
+            if p == 0:
+                if q < 0:
+                    return None
+            else:
+                t = q / p
+                if p < 0:
+                    t0 = max(t0, t)
+                else:
+                    t1 = min(t1, t)
+        if t0 > t1:
+            return None
+        return (a[0] + t0 * dx, a[1] + t0 * dy), (a[0] + t1 * dx, a[1] + t1 * dy), t0 > 0, t1 < 1
+
+    pieces, cur, cur_cut = [], None, False
+    for i in range(len(pts) - 1):
+        c = clip_seg(pts[i], pts[i + 1])
+        if c is None:
+            if cur:
+                pieces.append((cur, cur_cut, True))
+                cur = None
+            continue
+        a, b, a_cut, b_cut = c
+        if cur is None:
+            cur, cur_cut = [a], a_cut
+        cur.append(b)
+        if b_cut:
+            pieces.append((cur, cur_cut, True))
+            cur = None
+    if cur:
+        pieces.append((cur, cur_cut, False))
+    return [pc for pc in pieces if len(pc[0]) >= 2 and math.dist(pc[0][0], pc[0][-1]) > 0.01]
+
+
 def parse_length(value):
     """'12', '12 m', '40 ft', '12.5m' -> metres (or None)."""
     if not value:
@@ -441,7 +485,7 @@ def write_glb(path, nodes, materials):
 
 
 # ------------------------------------------------------------- road graph ----
-def build_road_graph(ways, proj):
+def build_road_graph(ways, proj, radius):
     """Split drivable ways at shared nodes into a graph of intersections and segments."""
     usage = {}
     for w in ways:
@@ -454,13 +498,24 @@ def build_road_graph(ways, proj):
                 coords[nid] = (g["lat"], g["lon"])
 
     nodes, edges = {}, []
+    next_boundary = [-1]
 
     def graph_node(nid):
         if nid not in nodes:
             lat, lon = coords[nid]
             e, n = proj.to_en(lat, lon)
             nodes[nid] = {"id": nid, "x": round(e, 2), "z": round(-n, 2),
-                          "lat": lat, "lon": lon, "degree": 0}
+                          "lat": lat, "lon": lon, "degree": 0, "boundary": False}
+        return nodes[nid]
+
+    def boundary_node(x, z):
+        """A node where a road leaves the map: a good spawn/despawn point for traffic."""
+        nid = next_boundary[0]
+        next_boundary[0] -= 1
+        lat = proj.lat0 + (-z) / proj.ky
+        lon = proj.lon0 + x / proj.kx
+        nodes[nid] = {"id": nid, "x": round(x, 2), "z": round(z, 2), "lat": lat, "lon": lon,
+                      "degree": 0, "boundary": True}
         return nodes[nid]
 
     for w in ways:
@@ -477,26 +532,30 @@ def build_road_graph(ways, proj):
         for i in range(1, len(ids)):
             if i == len(ids) - 1 or usage.get(ids[i], 0) > 1:
                 seg = ids[start:i + 1]
-                pts = []
+                start = i
+                full = []
                 for nid in seg:
                     e, n = proj.to_en(*coords[nid])
-                    pts.append([round(e, 2), round(-n, 2)])
-                length = sum(math.dist(pts[k], pts[k + 1]) for k in range(len(pts) - 1))
-                a, b = graph_node(seg[0]), graph_node(seg[-1])
-                a["degree"] += 1
-                b["degree"] += 1
+                    full.append((e, -n))
                 lanes = parse_length(t.get("lanes"))
                 speed = parse_length((t.get("maxspeed") or "").replace("mph", "")) if t.get("maxspeed") else None
                 if speed and "mph" in (t.get("maxspeed") or ""):
                     speed *= 1.609
-                edges.append({
-                    "from": seg[0], "to": seg[-1], "way_id": w["id"],
-                    "highway": t.get("highway"), "name": t.get("name", ""),
-                    "oneway": oneway, "lanes": int(lanes) if lanes else (1 if oneway else 2),
-                    "maxspeed_kmh": round(speed) if speed else None,
-                    "length_m": round(length, 2), "points": pts})
-                start = i
+                for piece, start_cut, end_cut in clip_polyline(full, radius):
+                    a = boundary_node(*piece[0]) if start_cut else graph_node(seg[0])
+                    b = boundary_node(*piece[-1]) if end_cut else graph_node(seg[-1])
+                    a["degree"] += 1
+                    b["degree"] += 1
+                    pts = [[round(x, 2), round(z, 2)] for x, z in piece]
+                    length = sum(math.dist(pts[k], pts[k + 1]) for k in range(len(pts) - 1))
+                    edges.append({
+                        "from": a["id"], "to": b["id"], "way_id": w["id"],
+                        "highway": t.get("highway"), "name": t.get("name", ""),
+                        "oneway": oneway, "lanes": int(lanes) if lanes else (1 if oneway else 2),
+                        "maxspeed_kmh": round(speed) if speed else None,
+                        "length_m": round(length, 2), "points": pts})
     return {"coordinates": "Godot metres: x = east, z = south (-z = north), origin at centre",
+            "note": "nodes with boundary=true are where a road leaves the map (negative ids)",
             "nodes": list(nodes.values()), "edges": edges}
 
 
@@ -565,7 +624,8 @@ def main():
                         width = max(width, lanes * 3.4)
                     if t.get("tunnel") in ("yes", "building_passage"):
                         continue
-                    roads.ribbon(mat, pts, width, ROAD_LAYER_HEIGHT[mat])
+                    for piece, _, _ in clip_polyline(pts, r):
+                        roads.ribbon(mat, piece, width, ROAD_LAYER_HEIGHT[mat])
                     stats["roads"] += 1
                 if t["highway"] in DRIVABLE:
                     drivable_ways.append(el)
@@ -592,6 +652,10 @@ def main():
             else:
                 continue
 
+            polys = [(o, h) for o, h in polys
+                     if abs(sum(p[0] for p in o) / len(o)) <= r and abs(sum(p[1] for p in o) / len(o)) <= r]
+            if not polys:
+                continue
             if "building" in t:
                 if t.get("building") in ("no",) or t.get("location") == "underground":
                     continue
@@ -626,7 +690,7 @@ def main():
     write_glb(glb_path, [("Ground-col", ground), ("Areas", areas), ("Roads", roads),
                          ("Buildings-col", buildings)], MATERIALS)
 
-    graph = build_road_graph(drivable_ways, proj)
+    graph = build_road_graph(drivable_ways, proj, radius)
     with open(os.path.join(args.out, "road_graph.json"), "w") as f:
         json.dump(graph, f, indent=1)
 

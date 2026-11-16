@@ -1,0 +1,24 @@
+{
+ "center": {
+  "lat": 37.4130927,
+  "lon": -122.0882242
+ },
+ "radius_m": 400.0,
+ "bbox": {
+  "south": 37.40949943886352,
+  "west": -122.09274814634297,
+  "north": 37.41668596113648,
+  "east": -122.08370025365703
+ },
+ "projection": "local equirectangular around center; x = (lon - lon0) * metres_per_deg_lon, z = -(lat - lat0) * metres_per_deg_lat",
+ "metres_per_deg_lon": 88418.37848521567,
+ "metres_per_deg_lat": 111319.49079327357,
+ "axes": "Godot: +X east, -Z north, +Y up, 1 unit = 1 metre",
+ "attribution": "Map data (c) OpenStreetMap contributors, ODbL",
+ "stats": {
+  "buildings": 700,
+  "roads": 431,
+  "areas": 15,
+  "skipped": 0
+ }
+}
